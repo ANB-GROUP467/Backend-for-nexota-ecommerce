@@ -19,16 +19,14 @@ const app = express();
 app.use(cors());
 
 app.use(express.json());
-app.use("/api/reviews", reviewRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/brands", brandRoutes);
-app.use("/api/subcategories", subCategoryRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/wishlist", wishlistRoutes);
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
+app.use("/reviews", reviewRoutes);
+app.use("/categories", categoryRoutes);
+app.use("/brands", brandRoutes);
+app.use("/subcategories", subCategoryRoutes);
+app.use("/products", productRoutes);
+app.use("/orders", orderRoutes);
+app.use("/wishlist", wishlistRoutes);
+app.use("/auth", authRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,
