@@ -15,9 +15,7 @@ const normalizeImages = (images) => {
 
   if (typeof images === "string") {
     const trimmed = images.trim();
-
     if (!trimmed) return [];
-
     if (trimmed.startsWith("[")) {
       try {
         const parsed = JSON.parse(trimmed);
@@ -26,7 +24,6 @@ const normalizeImages = (images) => {
         return [];
       }
     }
-
     return trimmed
       .split(",")
       .map((image) => image.trim())
@@ -39,7 +36,6 @@ const normalizeImages = (images) => {
 const parseStructuredValue = (value, fallback) => {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") return value;
-
   try {
     return JSON.parse(value);
   } catch {
@@ -56,10 +52,7 @@ const normalizeVariant = (variant = {}) => {
   const color =
     typeof variant.color === "string"
       ? { name: variant.color, hex: variant.colorHex || "" }
-      : {
-          name: variant.color?.name || "",
-          hex: variant.color?.hex || "",
-        };
+      : { name: variant.color?.name || "", hex: variant.color?.hex || "" };
 
   return {
     ...variant,
@@ -83,7 +76,6 @@ const normalizeVariant = (variant = {}) => {
 
 const normalizeSpecifications = (specifications) => {
   if (!Array.isArray(specifications)) return [];
-
   return specifications
     .map((spec) => ({
       group: spec.group || "General",
@@ -109,15 +101,12 @@ const buildProductPayload = (body, uploadedImages = []) => {
   }
 
   ["featured", "recommended", "bestSeller"].forEach((field) => {
-    if (body[field] !== undefined) {
-      payload[field] = parseBoolean(body[field]);
-    }
+    if (body[field] !== undefined) payload[field] = parseBoolean(body[field]);
   });
 
   ["price", "oldPrice", "stock", "rating", "reviewsCount"].forEach((field) => {
-    if (body[field] !== undefined && body[field] !== "") {
+    if (body[field] !== undefined && body[field] !== "")
       payload[field] = Number(body[field]);
-    }
   });
 
   if (uploadedImages.length > 0) {
@@ -126,9 +115,7 @@ const buildProductPayload = (body, uploadedImages = []) => {
     payload.images = normalizeImages(body.images);
   }
 
-  if (!payload.oldPrice && payload.oldPrice !== 0) {
-    delete payload.oldPrice;
-  }
+  if (!payload.oldPrice && payload.oldPrice !== 0) delete payload.oldPrice;
 
   return payload;
 };
@@ -136,9 +123,7 @@ const buildProductPayload = (body, uploadedImages = []) => {
 const resolveRefId = async (Model, value) => {
   if (!value) return null;
   if (isObjectId(value)) return value;
-
   const safeValue = escapeRegex(value);
-
   const doc = await Model.findOne({
     $or: [
       { slug: value },
@@ -149,7 +134,6 @@ const resolveRefId = async (Model, value) => {
       { title: { $regex: `^${safeValue}$`, $options: "i" } },
     ],
   }).select("_id");
-
   return doc?._id || null;
 };
 
@@ -174,9 +158,7 @@ const buildProductQuery = async (queryParams) => {
     status,
   } = queryParams;
 
-  const query = {
-    status: status || { $ne: "inactive" },
-  };
+  const query = { status: status || { $ne: "inactive" } };
 
   if (category) {
     const id = await resolveRefId(Category, category);
@@ -185,7 +167,6 @@ const buildProductQuery = async (queryParams) => {
   }
 
   const subCategoryValue = subCategory || subcategory;
-
   if (subCategoryValue) {
     const id = await resolveRefId(SubCategory, subCategoryValue);
     if (id) query.subCategory = id;
@@ -199,10 +180,8 @@ const buildProductQuery = async (queryParams) => {
   }
 
   const text = search || keyword;
-
   if (text) {
     const safeText = escapeRegex(text);
-
     query.$or = [
       { title: { $regex: safeText, $options: "i" } },
       { description: { $regex: safeText, $options: "i" } },
@@ -215,13 +194,11 @@ const buildProductQuery = async (queryParams) => {
   }
 
   if (rating) query.rating = { $gte: Number(rating) };
-
   if (minPrice || maxPrice) {
     query.price = {};
     if (minPrice) query.price.$gte = Number(minPrice);
     if (maxPrice) query.price.$lte = Number(maxPrice);
   }
-
   if (featured !== undefined) query.featured = parseBoolean(featured);
   if (recommended !== undefined) query.recommended = parseBoolean(recommended);
   if (bestSeller !== undefined) query.bestSeller = parseBoolean(bestSeller);
@@ -249,13 +226,13 @@ const buildSortOption = (sort) => {
 const populateProductRefs = (query) =>
   query.populate("category").populate("subCategory").populate("brand");
 
-// multer-storage-cloudinary already uploads files.
-// Here we only collect the uploaded Cloudinary URLs.
 const uploadFiles = async (files = []) => {
   return files
     .map((file) => file.path || file.secure_url || file.url || file.filename)
     .filter(Boolean);
 };
+
+// ─── Controllers ──────────────────────────────────────────────────────────────
 
 export const createProduct = async (req, res) => {
   try {
@@ -263,25 +240,19 @@ export const createProduct = async (req, res) => {
       ? await uploadFiles(req.files)
       : [];
     const payload = buildProductPayload(req.body, uploadedImages);
-
-    // ADD THIS — will appear in Vercel → Functions → Logs
-    console.log("CREATE PRODUCT PAYLOAD:", JSON.stringify(payload, null, 2));
-    console.log("CLOUDINARY ENV:", {
-      cloud_name: !!process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: !!process.env.CLOUDINARY_API_KEY,
-      api_secret: !!process.env.CLOUDINARY_API_SECRET,
-      mongodb: !!process.env.MONGODB_URI,
-    });
-
     const product = await Product.create(payload);
-    // ...
+
+    return res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      data: product,
+      product,
+    });
   } catch (error) {
-    console.error("Create product error FULL:", error); // ← already there but make sure it logs error.stack too
+    console.error("Create product error:", error);
     return res.status(500).json({
       success: false,
       message: error.message || "Create product failed",
-      // ADD THIS temporarily so the browser shows the real error:
-      error: process.env.NODE_ENV !== "production" ? error.stack : undefined,
     });
   }
 };
@@ -314,44 +285,37 @@ export const getProducts = async (req, res) => {
     });
   } catch (error) {
     console.error("Get products error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Products fetch failed",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Products fetch failed",
+      });
   }
 };
 
 export const getProductById = async (req, res) => {
   try {
     if (!isObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid product id",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid product id" });
     }
-
     const product = await populateProductRefs(Product.findById(req.params.id));
-
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
-
-    return res.json({
-      success: true,
-      data: product,
-      product,
-    });
+    return res.json({ success: true, data: product, product });
   } catch (error) {
     console.error("Get product by id error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Product fetch failed",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Product fetch failed",
+      });
   }
 };
 
@@ -359,33 +323,26 @@ export const getProductBySlug = async (req, res) => {
   try {
     const slug = String(req.params.slug || req.params.id || "").toLowerCase();
     const product = await populateProductRefs(Product.findOne({ slug }));
-
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
-
-    return res.json({
-      success: true,
-      data: product,
-      product,
-    });
+    return res.json({ success: true, data: product, product });
   } catch (error) {
     console.error("Get product by slug error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Product fetch failed",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Product fetch failed",
+      });
   }
 };
 
 export const searchProducts = async (req, res) => {
   req.query.search =
     req.params.keyword || req.query.search || req.query.keyword;
-
   return getProducts(req, res);
 };
 
@@ -394,29 +351,22 @@ export const filterProducts = getProducts;
 export const updateProduct = async (req, res) => {
   try {
     if (!isObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid product id",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid product id" });
     }
-
     const product = await Product.findById(req.params.id);
-
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
-
     const uploadedImages = req.files?.length
       ? await uploadFiles(req.files)
       : [];
     const payload = buildProductPayload(req.body, uploadedImages);
-
     Object.assign(product, payload);
     await product.save();
-
     return res.json({
       success: true,
       message: "Product updated successfully",
@@ -425,32 +375,28 @@ export const updateProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Update product error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Update product failed",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Update product failed",
+      });
   }
 };
 
 export const deleteProduct = async (req, res) => {
   try {
     if (!isObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid product id",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid product id" });
     }
-
     const product = await Product.findByIdAndDelete(req.params.id);
-
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
-
     return res.json({
       success: true,
       message: "Product deleted successfully",
@@ -458,11 +404,12 @@ export const deleteProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete product error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Delete product failed",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Delete product failed",
+      });
   }
 };
 
