@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Brand from "../models/Brand.js";
 import Product from "../models/Product.js";
 
@@ -110,10 +111,6 @@ export const updateBrand = async (req, res) => {
   }
 };
 
-import mongoose from "mongoose";
-import Brand from "../models/Brand.js";
-import Product from "../models/Product.js";
-
 export const deleteBrand = async (req, res) => {
   try {
     const { id } = req.params;
@@ -135,7 +132,9 @@ export const deleteBrand = async (req, res) => {
       });
     }
 
-    const linkedProducts = await Product.find({ brand: id }).select("_id");
+    const linkedProducts = await Product.find(
+      getBrandProductQuery(brand),
+    ).select("_id");
 
     if (linkedProducts.length > 0) {
       let targetBrandId = moveProductsTo;
@@ -143,7 +142,7 @@ export const deleteBrand = async (req, res) => {
       if (createBrand?.name) {
         const createdBrand = await Brand.create({
           name: createBrand.name,
-          slug: createBrand.slug,
+          slug: createBrand.slug || toSlug(createBrand.name),
           logo: createBrand.logo || "",
         });
 
@@ -167,10 +166,9 @@ export const deleteBrand = async (req, res) => {
         });
       }
 
-      await Product.updateMany(
-        { brand: id },
-        { $set: { brand: targetBrandId } },
-      );
+      await Product.updateMany(getBrandProductQuery(brand), {
+        $set: { brand: targetBrandId },
+      });
     }
 
     await Brand.findByIdAndDelete(id);
