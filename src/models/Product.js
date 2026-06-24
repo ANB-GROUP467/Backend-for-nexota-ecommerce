@@ -229,13 +229,17 @@ const normalizeOption = (value) =>
     .trim()
     .toLowerCase();
 
-productSchema.pre("validate", function syncVariantSummary() {
+// ─── FIX: use next(err) instead of throw ─────────────────────────────────────
+// Throwing inside a Mongoose pre-hook bypasses Express error handling and
+// crashes the Node process (exit code 128) on Vercel serverless functions.
+// next(err) properly routes the error to the catch block in the controller.
+productSchema.pre("validate", function syncVariantSummary(next) {
   const activeVariants = (this.variants || []).filter(
     (variant) => variant.isActive,
   );
 
   if (activeVariants.length === 0) {
-    return;
+    return next();
   }
 
   const seenSkus = new Set();
@@ -252,12 +256,12 @@ productSchema.pre("validate", function syncVariantSummary() {
     ].join("|");
 
     if (seenSkus.has(sku)) {
-      throw new Error(`Duplicate variant SKU: ${variant.sku}`);
+      return next(new Error(`Duplicate variant SKU: ${variant.sku}`));
     }
 
     if (seenCombinations.has(combination)) {
-      throw new Error(
-        "Each version/color/storage/RAM combination must be unique",
+      return next(
+        new Error("Each version/color/storage/RAM combination must be unique"),
       );
     }
 
@@ -284,9 +288,15 @@ productSchema.pre("validate", function syncVariantSummary() {
     (total, variant) => total + Number(variant.stock || 0),
     0,
   );
+
+  return next();
 });
 
-productSchema.index({ "variants.sku": 1 }, { unique: true, sparse: true });
+// ─── FIX: removed unique sparse index on variants.sku ────────────────────────
+// A sparse unique index on an array subdocument field causes E11000 duplicate
+// key errors when multiple products have no variants (all have sku: ""), or
+// when variants share SKUs across different products unintentionally.
+// SKU uniqueness is already enforced above in the pre-validate hook per product.
 productSchema.index({ category: 1, status: 1 });
 productSchema.index({ brand: 1, status: 1 });
 

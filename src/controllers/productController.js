@@ -264,20 +264,24 @@ export const createProduct = async (req, res) => {
       : [];
     const payload = buildProductPayload(req.body, uploadedImages);
 
-    const product = await Product.create(payload);
-
-    return res.status(201).json({
-      success: true,
-      message: "Product created successfully",
-      data: product,
-      product,
+    // ADD THIS — will appear in Vercel → Functions → Logs
+    console.log("CREATE PRODUCT PAYLOAD:", JSON.stringify(payload, null, 2));
+    console.log("CLOUDINARY ENV:", {
+      cloud_name: !!process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: !!process.env.CLOUDINARY_API_KEY,
+      api_secret: !!process.env.CLOUDINARY_API_SECRET,
+      mongodb: !!process.env.MONGODB_URI,
     });
-  } catch (error) {
-    console.error("Create product error:", error);
 
+    const product = await Product.create(payload);
+    // ...
+  } catch (error) {
+    console.error("Create product error FULL:", error); // ← already there but make sure it logs error.stack too
     return res.status(500).json({
       success: false,
       message: error.message || "Create product failed",
+      // ADD THIS temporarily so the browser shows the real error:
+      error: process.env.NODE_ENV !== "production" ? error.stack : undefined,
     });
   }
 };
