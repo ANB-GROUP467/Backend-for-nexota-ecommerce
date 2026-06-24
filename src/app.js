@@ -17,26 +17,24 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ─── CORS ────────────────────────────────────────────────────────────────────
-// Must be the VERY FIRST middleware so headers are set even on 401/500 responses.
-// Without this, browsers block the response before JS can read the status code.
+// ─── CORS ─────────────────────────────────────────────────────────────────────
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    // Allow all origins — tighten this to a whitelist in production if needed
     return callback(null, true);
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   credentials: false,
-  optionsSuccessStatus: 200, // Some legacy browsers choke on 204
+  optionsSuccessStatus: 200,
 };
 
 app.use(cors(corsOptions));
 
-// Handle OPTIONS preflight explicitly — Vercel serverless can drop these otherwise
-app.options("*", cors(corsOptions));
+// ✅ Express 4+5 compatible preflight — no wildcard "*"
+// cors() middleware already handles OPTIONS automatically when used with app.use()
+// The explicit options handler below uses a regex instead of "*"
+app.options(/.*/, cors(corsOptions));
 
 // ─── Body parsers ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
