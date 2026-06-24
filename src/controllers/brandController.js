@@ -110,9 +110,23 @@ export const updateBrand = async (req, res) => {
   }
 };
 
+import mongoose from "mongoose";
+import Brand from "../models/Brand.js";
+import Product from "../models/Product.js";
+
 export const deleteBrand = async (req, res) => {
   try {
-    const brand = await Brand.findById(req.params.id);
+    const { id } = req.params;
+    const { moveProductsTo, createBrand } = req.body || {};
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid brand id",
+      });
+    }
+
+    const brand = await Brand.findById(id);
 
     if (!brand) {
       return res.status(404).json({
@@ -121,77 +135,56 @@ export const deleteBrand = async (req, res) => {
       });
     }
 
-    const linkedProducts = await Product.find(
-      getBrandProductQuery(brand),
-    ).select("title name slug image brand brandId brandName");
-
-    let targetBrand = null;
+    const linkedProducts = await Product.find({ brand: id }).select("_id");
 
     if (linkedProducts.length > 0) {
-      if (req.body?.moveProductsTo) {
-        if (String(req.body.moveProductsTo) === String(brand._id)) {
-          return res.status(400).json({
-            success: false,
-            message: "Choose a different brand for reassignment",
-          });
-        }
+      let targetBrandId = moveProductsTo;
 
-        targetBrand = await Brand.findById(req.body.moveProductsTo);
-      } else if (req.body?.createBrand?.name) {
-        const payload = req.body.createBrand;
-        const slug = payload.slug || toSlug(payload.name);
-        const exists = await Brand.findOne({ slug });
+      if (createBrand?.name) {
+        const createdBrand = await Brand.create({
+          name: createBrand.name,
+          slug: createBrand.slug,
+          logo: createBrand.logo || "",
+        });
 
-        if (exists) {
-          return res.status(400).json({
-            success: false,
-            message: "Destination brand already exists",
-          });
-        }
+        targetBrandId = createdBrand._id;
+      }
 
-        targetBrand = await Brand.create({
-          name: payload.name,
-          slug,
-          logo: payload.logo,
+      if (!targetBrandId || !mongoose.Types.ObjectId.isValid(targetBrandId)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This brand has linked products. Select another brand or create a new brand before deleting.",
         });
       }
+
+      const targetBrand = await Brand.findById(targetBrandId);
 
       if (!targetBrand) {
-        const availableBrands = await Brand.find({
-          _id: { $ne: brand._id },
-        }).sort({ createdAt: -1 });
-
-        return res.status(409).json({
+        return res.status(404).json({
           success: false,
-          requiresReassignment: true,
-          message: "This brand has products. Move them before deleting.",
-          brand,
-          products: linkedProducts,
-          availableBrands,
+          message: "Target brand not found",
         });
       }
 
-      await Product.updateMany(getBrandProductQuery(brand), {
-        $set: {
-          brand: targetBrand._id,
-          brandId: targetBrand._id,
-          brandName: targetBrand.name,
-        },
-      });
+      await Product.updateMany(
+        { brand: id },
+        { $set: { brand: targetBrandId } },
+      );
     }
 
-    await brand.deleteOne();
+    await Brand.findByIdAndDelete(id);
 
-    res.json({
+    return res.status(200).json({
       success: true,
       message: "Brand deleted successfully",
-      movedProducts: linkedProducts.length,
-      destinationBrand: targetBrand,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Delete brand error:", error);
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Delete brand failed",
     });
   }
 };
