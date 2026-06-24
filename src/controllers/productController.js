@@ -228,16 +228,9 @@ const populateProductRefs = (query) =>
   query.populate("category").populate("subCategory").populate("brand");
 
 const uploadFiles = async (files = []) => {
-  const uploadedImages = [];
-
-  for (const file of files) {
-    const result = await cloudinary.uploader.upload(file.path, {
-      folder: "nexota/products",
-    });
-    uploadedImages.push(result.secure_url);
-  }
-
-  return uploadedImages;
+  return files
+    .map((file) => file.path || file.secure_url || file.url || file.filename)
+    .filter(Boolean);
 };
 
 export const createProduct = async (req, res) => {
@@ -256,7 +249,12 @@ export const createProduct = async (req, res) => {
       product,
     });
   } catch (error) {
-    return res.status(400).json({ success: false, message: error.message });
+    console.error("Create product error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Create product failed",
+    });
   }
 };
 
@@ -367,7 +365,12 @@ export const updateProduct = async (req, res) => {
       product,
     });
   } catch (error) {
-    return res.status(400).json({ success: false, message: error.message });
+    console.error("Update product error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Update product failed",
+    });
   }
 };
 
