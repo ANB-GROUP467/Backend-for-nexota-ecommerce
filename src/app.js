@@ -17,12 +17,22 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-app.use(
-  cors({
-    origin: "*",
-    credentials: false,
-  }),
-);
+const corsOptions = {
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "https://nexota-e-commerce-admin.vercel.app",
+    "https://nexota-e-commerce.vercel.app",
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -53,11 +63,7 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  console.error("GLOBAL API ERROR:", {
-    message: error.message,
-    stack: error.stack,
-    name: error.name,
-  });
+  console.error("GLOBAL API ERROR:", error);
 
   res.status(error.status || 500).json({
     success: false,
