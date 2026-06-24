@@ -1,5 +1,6 @@
 import express from "express";
 import upload from "../middleware/uploadMiddleware.js";
+
 import {
   createProduct,
   getProducts,
@@ -15,10 +16,20 @@ import {
 
 const router = express.Router();
 
-const handleProductImagesUpload = (req, res, next) => {
+const asyncHandler = (controller) => {
+  return (req, res, next) => {
+    Promise.resolve(controller(req, res, next)).catch(next);
+  };
+};
+
+const uploadProductImages = (req, res, next) => {
   upload.array("images", 10)(req, res, (error) => {
     if (error) {
-      console.error("Product image upload error:", error);
+      console.error("PRODUCT IMAGE UPLOAD ERROR:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      });
 
       return res.status(400).json({
         success: false,
@@ -30,17 +41,16 @@ const handleProductImagesUpload = (req, res, next) => {
   });
 };
 
-// Specific routes must be declared before /:id.
-router.get("/", getProducts);
-router.get("/search/:keyword", searchProducts);
-router.get("/filter/all", filterProducts);
-router.get("/featured", getFeaturedProducts);
-router.get("/best-sellers", getBestSellerProducts);
-router.get("/slug/:slug", getProductBySlug);
-router.get("/:id", getProductById);
+router.get("/", asyncHandler(getProducts));
+router.get("/search/:keyword", asyncHandler(searchProducts));
+router.get("/filter/all", asyncHandler(filterProducts));
+router.get("/featured", asyncHandler(getFeaturedProducts));
+router.get("/best-sellers", asyncHandler(getBestSellerProducts));
+router.get("/slug/:slug", asyncHandler(getProductBySlug));
+router.get("/:id", asyncHandler(getProductById));
 
-router.post("/", handleProductImagesUpload, createProduct);
-router.put("/:id", handleProductImagesUpload, updateProduct);
-router.delete("/:id", deleteProduct);
+router.post("/", uploadProductImages, asyncHandler(createProduct));
+router.put("/:id", uploadProductImages, asyncHandler(updateProduct));
+router.delete("/:id", asyncHandler(deleteProduct));
 
 export default router;

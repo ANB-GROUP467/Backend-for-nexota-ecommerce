@@ -20,11 +20,19 @@ const app = express();
 app.use(
   cors({
     origin: "*",
+    credentials: false,
   }),
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Nexota API Running",
+  });
+});
 
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/categories", categoryRoutes);
@@ -37,18 +45,23 @@ app.use("/api/wishlist", wishlistRoutes);
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.get("/", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Nexota API Running",
-  });
-});
-
-// Route not found
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "API route not found",
+    message: `API route not found: ${req.method} ${req.originalUrl}`,
+  });
+});
+
+app.use((error, req, res, next) => {
+  console.error("GLOBAL API ERROR:", {
+    message: error.message,
+    stack: error.stack,
+    name: error.name,
+  });
+
+  res.status(error.status || 500).json({
+    success: false,
+    message: error.message || "Internal Server Error",
   });
 });
 
