@@ -96,73 +96,67 @@ const productSchema = new mongoose.Schema(
 // ─── Sync variant summary before save ─────────────────────────────────────────
 // Using pre("save") with a regular function + next callback —
 // most compatible pattern across Mongoose 6, 7, 8, 9.
-productSchema.pre("save", function (next) {
-  try {
-    const activeVariants = (this.variants || []).filter((v) => v.isActive);
+productSchema.pre("save", function () {
+  const activeVariants = (this.variants || []).filter((v) => v.isActive);
 
-    if (activeVariants.length === 0) {
-      return next();
-    }
-
-    const seenSkus = new Set();
-    const seenCombinations = new Set();
-
-    for (const variant of activeVariants) {
-      const sku = String(variant.sku || "")
-        .trim()
-        .toLowerCase();
-      const combination = [
-        String(variant.version || "")
-          .trim()
-          .toLowerCase(),
-        String(variant.color?.name || "")
-          .trim()
-          .toLowerCase(),
-        String(variant.storage || "")
-          .trim()
-          .toLowerCase(),
-        String(variant.ram || "")
-          .trim()
-          .toLowerCase(),
-      ].join("|");
-
-      if (seenSkus.has(sku)) {
-        return next(new Error(`Duplicate variant SKU: ${variant.sku}`));
-      }
-
-      if (seenCombinations.has(combination)) {
-        return next(
-          new Error(
-            "Each version/color/storage/RAM combination must be unique",
-          ),
-        );
-      }
-
-      seenSkus.add(sku);
-      seenCombinations.add(combination);
-    }
-
-    let defaultVariant = activeVariants.find(
-      (v) => v.sku === this.defaultVariantSku,
-    );
-
-    if (!defaultVariant) {
-      defaultVariant =
-        activeVariants.find((v) => Number(v.stock) > 0) || activeVariants[0];
-      this.defaultVariantSku = defaultVariant.sku;
-    }
-
-    this.price = Number(defaultVariant.price || 0);
-    this.oldPrice = Number(defaultVariant.oldPrice || 0);
-    this.stock = activeVariants.reduce(
-      (total, v) => total + Number(v.stock || 0),
-      0,
-    );
-
-    return next();
-  } catch (err) {
-    return next(err);
+  if (activeVariants.length === 0) {
+    return;
   }
+
+  const seenSkus = new Set();
+  const seenCombinations = new Set();
+
+  for (const variant of activeVariants) {
+    const sku = String(variant.sku || "")
+      .trim()
+      .toLowerCase();
+
+    const combination = [
+      String(variant.version || "")
+        .trim()
+        .toLowerCase(),
+      String(variant.color?.name || "")
+        .trim()
+        .toLowerCase(),
+      String(variant.storage || "")
+        .trim()
+        .toLowerCase(),
+      String(variant.ram || "")
+        .trim()
+        .toLowerCase(),
+    ].join("|");
+
+    if (seenSkus.has(sku)) {
+      throw new Error(`Duplicate variant SKU: ${variant.sku}`);
+    }
+
+    if (seenCombinations.has(combination)) {
+      throw new Error(
+        "Each version/color/storage/RAM combination must be unique",
+      );
+    }
+
+    seenSkus.add(sku);
+    seenCombinations.add(combination);
+  }
+
+  let defaultVariant = activeVariants.find(
+    (v) => v.sku === this.defaultVariantSku,
+  );
+
+  if (!defaultVariant) {
+    defaultVariant =
+      activeVariants.find((v) => Number(v.stock) > 0) || activeVariants[0];
+
+    this.defaultVariantSku = defaultVariant.sku;
+  }
+
+  this.price = Number(defaultVariant.price || 0);
+  this.oldPrice = Number(defaultVariant.oldPrice || 0);
+  this.stock = activeVariants.reduce(
+    (total, v) => total + Number(v.stock || 0),
+    0,
+  );
 });
 
 productSchema.index({ category: 1, status: 1 });
