@@ -9,11 +9,80 @@ const toSlug = (value) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
-// Only match by ObjectId — string fields like brand.name cause CastError
-// when the Product.brand field is typed as ObjectId in the schema
+// Products may store brand as ObjectId OR as a plain string (name/slug).
+// We query both safely — ObjectId fields via $in with ObjectId,
+// string-only fields (brandName, brandTitle, brand_slug) via string match.
+// The "brand" path itself can hold either, so we pass both types for it.
 const getBrandProductQuery = (brand) => {
   const objectId = new mongoose.Types.ObjectId(brand._id);
-  return { brand: objectId };
+  return {
+    $or: [
+      { brand: objectId }, // brand stored as ObjectId ref
+      { brand: String(brand._id) }, // brand stored as id string
+      { brand: brand.slug }, // brand stored as slug string
+      { brand: brand.name }, // brand stored as name string
+      { brandId: objectId },
+      { brandId: String(brand._id) },
+      { brand_id: objectId },
+      { brand_id: String(brand._id) },
+      { brandName: brand.name },
+      { brandTitle: brand.name },
+      { brand_slug: brand.slug },
+    ],
+  };
+};
+
+// Run the query safely — if Mongoose throws a CastError (mixed schema),
+// fall back to a raw collection query that bypasses schema casting.
+const findLinkedProducts = async (brand) => {
+  try {
+    return await Product.find(getBrandProductQuery(brand)).select("_id");
+  } catch {
+    // Fallback: use native driver to avoid CastError on mixed-type fields
+    const objectId = new mongoose.Types.ObjectId(brand._id);
+    const raw = await Product.collection
+      .find({
+        $or: [
+          { brand: objectId },
+          { brand: String(brand._id) },
+          { brand: brand.slug },
+          { brand: brand.name },
+          { brandName: brand.name },
+          { brandTitle: brand.name },
+          { brand_slug: brand.slug },
+        ],
+      })
+      .project({ _id: 1 })
+      .toArray();
+    return raw;
+  }
+};
+
+const updateLinkedProducts = async (brand, targetBrandId) => {
+  const objectId = new mongoose.Types.ObjectId(brand._id);
+  const targetObjectId = new mongoose.Types.ObjectId(targetBrandId);
+
+  try {
+    await Product.updateMany(getBrandProductQuery(brand), {
+      $set: { brand: targetObjectId },
+    });
+  } catch {
+    // Fallback: native driver update to bypass CastError
+    await Product.collection.updateMany(
+      {
+        $or: [
+          { brand: objectId },
+          { brand: String(brand._id) },
+          { brand: brand.slug },
+          { brand: brand.name },
+          { brandName: brand.name },
+          { brandTitle: brand.name },
+          { brand_slug: brand.slug },
+        ],
+      },
+      { $set: { brand: targetObjectId } },
+    );
+  }
 };
 
 export const createBrand = async (req, res) => {
@@ -83,7 +152,6 @@ export const deleteBrand = async (req, res) => {
         .json({ success: false, message: "Brand not found" });
     }
 
-    // Read body — also check query params as Vercel fallback
     const body = req.body && Object.keys(req.body).length > 0 ? req.body : {};
     const moveProductsTo =
       body.moveProductsTo || req.query.moveProductsTo || null;
@@ -93,13 +161,9 @@ export const deleteBrand = async (req, res) => {
       id,
       moveProductsTo,
       hasCreateBrand: !!createBrandPayload,
-      bodyKeys: Object.keys(body),
     });
 
-    const linkedProducts = await Product.find(
-      getBrandProductQuery(brand),
-    ).select("_id");
-
+    const linkedProducts = await findLinkedProducts(brand);
     console.log("Linked products:", linkedProducts.length);
 
     if (linkedProducts.length > 0) {
@@ -125,23 +189,19 @@ export const deleteBrand = async (req, res) => {
 
       const targetBrand = await Brand.findById(targetBrandId);
       if (!targetBrand) {
-        return res.status(404).json({
-          success: false,
-          message: "Target brand not found",
-        });
+        return res
+          .status(404)
+          .json({ success: false, message: "Target brand not found" });
       }
 
-      await Product.updateMany(getBrandProductQuery(brand), {
-        $set: { brand: new mongoose.Types.ObjectId(targetBrandId) },
-      });
+      await updateLinkedProducts(brand, targetBrandId);
     }
 
     await Brand.findByIdAndDelete(id);
 
-    return res.status(200).json({
-      success: true,
-      message: "Brand deleted successfully",
-    });
+    return res
+      .status(200)
+      .json({ success: true, message: "Brand deleted successfully" });
   } catch (error) {
     console.error("Delete brand error:", error.name, error.message);
     return res.status(500).json({
