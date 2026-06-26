@@ -9,20 +9,23 @@ const toSlug = (value) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
-const getBrandProductQuery = (brand) => ({
-  $or: [
-    { brand: brand._id },
-    { brandId: brand._id },
-    { brand_id: brand._id },
-    { brand: brand.slug },
-    { brandId: brand.slug },
-    { brand_id: brand.slug },
-    { brand: brand.name },
-    { brandName: brand.name },
-    { brandTitle: brand.name },
-    { brand_slug: brand.slug },
-  ],
-});
+const getBrandProductQuery = (brand) => {
+  const objectId = new mongoose.Types.ObjectId(brand._id);
+  return {
+    $or: [
+      { brand: objectId },
+      { brandId: objectId },
+      { brand_id: objectId },
+      { brand: brand.slug },
+      { brandId: brand.slug },
+      { brand_id: brand.slug },
+      { brand: brand.name },
+      { brandName: brand.name },
+      { brandTitle: brand.name },
+      { brand_slug: brand.slug },
+    ],
+  };
+};
 
 export const createBrand = async (req, res) => {
   try {
@@ -38,51 +41,30 @@ export const createBrand = async (req, res) => {
       brand,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 export const getBrands = async (req, res) => {
   try {
-    const brands = await Brand.find().sort({
-      createdAt: -1,
-    });
-
-    res.json({
-      success: true,
-      brands,
-    });
+    const brands = await Brand.find().sort({ createdAt: -1 });
+    res.json({ success: true, brands });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 export const getBrandById = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.id);
-
     if (!brand) {
-      return res.status(404).json({
-        success: false,
-        message: "Brand not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Brand not found" });
     }
-
-    res.json({
-      success: true,
-      brand,
-    });
+    res.json({ success: true, brand });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -91,31 +73,22 @@ export const updateBrand = async (req, res) => {
     const brand = await Brand.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
-
     if (!brand) {
-      return res.status(404).json({
-        success: false,
-        message: "Brand not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Brand not found" });
     }
-
-    res.json({
-      success: true,
-      brand,
-    });
+    res.json({ success: true, brand });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 export const deleteBrand = async (req, res) => {
   try {
     const { id } = req.params;
-    const { moveProductsTo, createBrand } = req.body || {};
 
+    // Validate the brand ID format first
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -124,7 +97,6 @@ export const deleteBrand = async (req, res) => {
     }
 
     const brand = await Brand.findById(id);
-
     if (!brand) {
       return res.status(404).json({
         success: false,
@@ -132,33 +104,40 @@ export const deleteBrand = async (req, res) => {
       });
     }
 
+    // Safely parse body — Vercel/Express may not populate req.body on DELETE
+    // if the client didn't set Content-Type: application/json
+    const body = req.body || {};
+    const moveProductsTo = body.moveProductsTo ?? null;
+    const createBrandPayload = body.createBrand ?? null;
+
+    // Check for linked products
     const linkedProducts = await Product.find(
       getBrandProductQuery(brand),
     ).select("_id");
 
     if (linkedProducts.length > 0) {
-      let targetBrandId = moveProductsTo;
+      let targetBrandId = moveProductsTo || null;
 
-      if (createBrand?.name) {
+      // If client wants to create a new brand to move products into
+      if (createBrandPayload?.name) {
         const createdBrand = await Brand.create({
-          name: createBrand.name,
-          slug: createBrand.slug || toSlug(createBrand.name),
-          logo: createBrand.logo || "",
+          name: createBrandPayload.name,
+          slug: createBrandPayload.slug || toSlug(createBrandPayload.name),
+          logo: createBrandPayload.logo || "",
         });
-
-        targetBrandId = createdBrand._id;
+        targetBrandId = String(createdBrand._id);
       }
 
+      // Must have a valid target at this point
       if (!targetBrandId || !mongoose.Types.ObjectId.isValid(targetBrandId)) {
         return res.status(400).json({
           success: false,
           message:
-            "This brand has linked products. Select another brand or create a new brand before deleting.",
+            "This brand has linked products. Provide moveProductsTo or createBrand before deleting.",
         });
       }
 
       const targetBrand = await Brand.findById(targetBrandId);
-
       if (!targetBrand) {
         return res.status(404).json({
           success: false,
@@ -166,11 +145,13 @@ export const deleteBrand = async (req, res) => {
         });
       }
 
+      // Re-assign all linked products to the target brand
       await Product.updateMany(getBrandProductQuery(brand), {
-        $set: { brand: targetBrandId },
+        $set: { brand: new mongoose.Types.ObjectId(targetBrandId) },
       });
     }
 
+    // Finally delete the brand
     await Brand.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -178,11 +159,16 @@ export const deleteBrand = async (req, res) => {
       message: "Brand deleted successfully",
     });
   } catch (error) {
-    console.error("Delete brand error:", error);
-
+    console.error(
+      "Delete brand error:",
+      error.name,
+      error.message,
+      error.stack,
+    );
     return res.status(500).json({
       success: false,
       message: error.message || "Delete brand failed",
+      errorType: error.name,
     });
   }
 };
