@@ -9,22 +9,11 @@ const toSlug = (value) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
+// Only match by ObjectId — string fields like brand.name cause CastError
+// when the Product.brand field is typed as ObjectId in the schema
 const getBrandProductQuery = (brand) => {
   const objectId = new mongoose.Types.ObjectId(brand._id);
-  return {
-    $or: [
-      { brand: objectId },
-      { brandId: objectId },
-      { brand_id: objectId },
-      { brand: brand.slug },
-      { brandId: brand.slug },
-      { brand_id: brand.slug },
-      { brand: brand.name },
-      { brandName: brand.name },
-      { brandTitle: brand.name },
-      { brand_slug: brand.slug },
-    ],
-  };
+  return { brand: objectId };
 };
 
 export const createBrand = async (req, res) => {
@@ -94,30 +83,28 @@ export const deleteBrand = async (req, res) => {
         .json({ success: false, message: "Brand not found" });
     }
 
-    // Vercel can strip DELETE body — read from body first, then query params as fallback
+    // Read body — also check query params as Vercel fallback
     const body = req.body && Object.keys(req.body).length > 0 ? req.body : {};
     const moveProductsTo =
       body.moveProductsTo || req.query.moveProductsTo || null;
     const createBrandPayload = body.createBrand || null;
 
-    console.log("deleteBrand called:", {
+    console.log("deleteBrand:", {
       id,
       moveProductsTo,
       hasCreateBrand: !!createBrandPayload,
       bodyKeys: Object.keys(body),
-      query: req.query,
     });
 
     const linkedProducts = await Product.find(
       getBrandProductQuery(brand),
     ).select("_id");
 
-    console.log("Linked products count:", linkedProducts.length);
+    console.log("Linked products:", linkedProducts.length);
 
     if (linkedProducts.length > 0) {
       let targetBrandId = moveProductsTo || null;
 
-      // Create a new brand to move products into
       if (createBrandPayload?.name) {
         const created = await Brand.create({
           name: createBrandPayload.name,
@@ -127,7 +114,6 @@ export const deleteBrand = async (req, res) => {
         targetBrandId = String(created._id);
       }
 
-      // At this point we must have a valid target brand
       if (!targetBrandId || !mongoose.Types.ObjectId.isValid(targetBrandId)) {
         return res.status(400).json({
           success: false,
@@ -157,12 +143,7 @@ export const deleteBrand = async (req, res) => {
       message: "Brand deleted successfully",
     });
   } catch (error) {
-    console.error(
-      "Delete brand error:",
-      error.name,
-      error.message,
-      error.stack,
-    );
+    console.error("Delete brand error:", error.name, error.message);
     return res.status(500).json({
       success: false,
       message: error.message || "Delete brand failed",
