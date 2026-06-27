@@ -9,80 +9,18 @@ const toSlug = (value) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
-// Products may store brand as ObjectId OR as a plain string (name/slug).
-// We query both safely — ObjectId fields via $in with ObjectId,
-// string-only fields (brandName, brandTitle, brand_slug) via string match.
-// The "brand" path itself can hold either, so we pass both types for it.
-const getBrandProductQuery = (brand) => {
+// Use native driver query — bypasses Mongoose schema casting entirely.
+// This handles products where brand is stored as ObjectId OR as a string.
+const nativeBrandQuery = (brand) => {
   const objectId = new mongoose.Types.ObjectId(brand._id);
   return {
     $or: [
-      { brand: objectId }, // brand stored as ObjectId ref
-      { brand: String(brand._id) }, // brand stored as id string
-      { brand: brand.slug }, // brand stored as slug string
-      { brand: brand.name }, // brand stored as name string
-      { brandId: objectId },
-      { brandId: String(brand._id) },
-      { brand_id: objectId },
-      { brand_id: String(brand._id) },
-      { brandName: brand.name },
-      { brandTitle: brand.name },
-      { brand_slug: brand.slug },
+      { brand: objectId },
+      { brand: String(brand._id) },
+      { brand: brand.name },
+      { brand: brand.slug },
     ],
   };
-};
-
-// Run the query safely — if Mongoose throws a CastError (mixed schema),
-// fall back to a raw collection query that bypasses schema casting.
-const findLinkedProducts = async (brand) => {
-  try {
-    return await Product.find(getBrandProductQuery(brand)).select("_id");
-  } catch {
-    // Fallback: use native driver to avoid CastError on mixed-type fields
-    const objectId = new mongoose.Types.ObjectId(brand._id);
-    const raw = await Product.collection
-      .find({
-        $or: [
-          { brand: objectId },
-          { brand: String(brand._id) },
-          { brand: brand.slug },
-          { brand: brand.name },
-          { brandName: brand.name },
-          { brandTitle: brand.name },
-          { brand_slug: brand.slug },
-        ],
-      })
-      .project({ _id: 1 })
-      .toArray();
-    return raw;
-  }
-};
-
-const updateLinkedProducts = async (brand, targetBrandId) => {
-  const objectId = new mongoose.Types.ObjectId(brand._id);
-  const targetObjectId = new mongoose.Types.ObjectId(targetBrandId);
-
-  try {
-    await Product.updateMany(getBrandProductQuery(brand), {
-      $set: { brand: targetObjectId },
-    });
-  } catch {
-    // Fallback: native driver update to bypass CastError
-    await Product.collection.updateMany(
-      {
-        $or: [
-          { brand: objectId },
-          { brand: String(brand._id) },
-          { brand: brand.slug },
-          { brand: brand.name },
-          { brandName: brand.name },
-          { brandTitle: brand.name },
-          { brand_slug: brand.slug },
-        ],
-      },
-      { $set: { brand: targetObjectId } },
-    );
-  }
 };
 
 export const createBrand = async (req, res) => {
@@ -163,7 +101,12 @@ export const deleteBrand = async (req, res) => {
       hasCreateBrand: !!createBrandPayload,
     });
 
-    const linkedProducts = await findLinkedProducts(brand);
+    // Use native driver — no CastError even if brand is stored as string
+    const linkedProducts = await Product.collection
+      .find(nativeBrandQuery(brand))
+      .project({ _id: 1 })
+      .toArray();
+
     console.log("Linked products:", linkedProducts.length);
 
     if (linkedProducts.length > 0) {
@@ -194,7 +137,12 @@ export const deleteBrand = async (req, res) => {
           .json({ success: false, message: "Target brand not found" });
       }
 
-      await updateLinkedProducts(brand, targetBrandId);
+      const targetObjectId = new mongoose.Types.ObjectId(targetBrandId);
+
+      // Native driver update — no casting, handles string brand values too
+      await Product.collection.updateMany(nativeBrandQuery(brand), {
+        $set: { brand: targetObjectId },
+      });
     }
 
     await Brand.findByIdAndDelete(id);
