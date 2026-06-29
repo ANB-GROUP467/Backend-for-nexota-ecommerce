@@ -1,4 +1,4 @@
-import Deal from "../models/Deal.js";
+import Deals from "../models/Deals";
 
 const sendSuccess = (res, payload = {}, status = 200) => {
   return res.status(status).json({
