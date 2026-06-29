@@ -20,8 +20,7 @@ const app = express();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
+  origin(origin, callback) {
     return callback(null, true);
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -31,17 +30,20 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-// ✅ Express 4+5 compatible preflight — no wildcard "*"
-// cors() middleware already handles OPTIONS automatically when used with app.use()
-// The explicit options handler below uses a regex instead of "*"
 app.options(/.*/, cors(corsOptions));
 
-// ─── Body parsers ─────────────────────────────────────────────────────────────
+// ─── Body Parsers ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ─── Health check ─────────────────────────────────────────────────────────────
+// ─── Static / Browser Noise Routes ────────────────────────────────────────────
+app.get("/favicon.ico", (req, res) => {
+  res.status(204).end();
+});
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -49,7 +51,7 @@ app.get("/", (req, res) => {
   });
 });
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── API Routes ────────────────────────────────────────────────────────────────
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/auth", authRoutes);
@@ -60,19 +62,11 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/deals", dealRoutes);
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// ─── 404 ──────────────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `API route not found: ${req.method} ${req.originalUrl}`,
-  });
-});
-
-// ─── Global error handler ─────────────────────────────────────────────────────
+// ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((error, req, res, next) => {
   console.error("GLOBAL API ERROR:", {
+    method: req.method,
+    url: req.originalUrl,
     message: error.message,
     stack: error.stack,
     name: error.name,
@@ -81,6 +75,14 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({
     success: false,
     message: error.message || "Internal Server Error",
+  });
+});
+
+// ─── 404 ──────────────────────────────────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `API route not found: ${req.method} ${req.originalUrl}`,
   });
 });
 
