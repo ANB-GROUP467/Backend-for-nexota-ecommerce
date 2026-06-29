@@ -4,29 +4,29 @@ import app from "../src/app.js";
 
 // Cache the DB connection across warm invocations
 let isConnected = false;
+import app from "../src/app.js";
+import connectDB from "../src/config/db.js";
 
-const handler = async (req, res) => {
+let isConnected = false;
+
+export default async function handler(req, res) {
   try {
     if (!isConnected) {
       await connectDB();
       isConnected = true;
     }
+
+    return app(req, res);
   } catch (error) {
-    console.error("Vercel database connection error:", error);
+    console.error("VERCEL FUNCTION STARTUP ERROR:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+
     return res.status(500).json({
       success: false,
-      message: "Database connection failed",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      message: error.message || "Serverless function failed",
     });
   }
-
-  // Express 4 and 5 both support this pattern —
-  // calling app(req, res) works because Express app IS a request handler function.
-  // If Express 5 ever breaks this, the fallback is: app.handle(req, res, () => {})
-  return new Promise((resolve) => {
-    res.on("finish", resolve);
-    app(req, res, resolve); // third arg handles cases where no route matches
-  });
-};
-
-export default handler;
+}

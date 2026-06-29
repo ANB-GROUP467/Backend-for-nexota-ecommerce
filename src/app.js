@@ -18,10 +18,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
 const corsOptions = {
   origin(origin, callback) {
-    return callback(null, true);
+    callback(null, true);
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -30,20 +29,16 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
 
-// ─── Body Parsers ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ─── Static / Browser Noise Routes ────────────────────────────────────────────
 app.get("/favicon.ico", (req, res) => {
   res.status(204).end();
 });
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -51,7 +46,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// ─── API Routes ────────────────────────────────────────────────────────────────
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/auth", authRoutes);
@@ -62,15 +56,8 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/deals", dealRoutes);
 
-// ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((error, req, res, next) => {
-  console.error("GLOBAL API ERROR:", {
-    method: req.method,
-    url: req.originalUrl,
-    message: error.message,
-    stack: error.stack,
-    name: error.name,
-  });
+  console.error("GLOBAL API ERROR:", error);
 
   res.status(error.status || 500).json({
     success: false,
@@ -78,7 +65,6 @@ app.use((error, req, res, next) => {
   });
 });
 
-// ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({
     success: false,
