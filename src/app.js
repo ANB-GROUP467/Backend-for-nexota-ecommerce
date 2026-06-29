@@ -31,18 +31,33 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb",
+  }),
+);
 
+// Prevent favicon requests from producing unnecessary errors
 app.get("/favicon.ico", (req, res) => {
   res.status(204).end();
 });
 
+// Local static uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Nexota API Running",
+  });
+});
+
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Nexota API is healthy",
+    environment: process.env.NODE_ENV || "development",
   });
 });
 
@@ -56,19 +71,32 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/deals", dealRoutes);
 
-app.use((error, req, res, next) => {
-  console.error("GLOBAL API ERROR:", error);
-
-  res.status(error.status || 500).json({
-    success: false,
-    message: error.message || "Internal Server Error",
-  });
-});
-
+// 404 middleware must come after routes
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: `API route not found: ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// Error middleware must be last and must have four arguments
+app.use((error, req, res, next) => {
+  console.error("GLOBAL API ERROR:", {
+    message: error?.message,
+    stack: error?.stack,
+    name: error?.name,
+  });
+
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  return res.status(error?.status || 500).json({
+    success: false,
+    message:
+      process.env.NODE_ENV === "production"
+        ? "Internal Server Error"
+        : error?.message || "Internal Server Error",
   });
 });
 
